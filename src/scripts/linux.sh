@@ -1,6 +1,6 @@
 # Function to add sudo
 add_sudo() {
-  if ! command -v sudo >/dev/null; then
+  if ! command -v sudo; then
     check_package sudo || apt-get update
     apt-get install -y sudo || (apt-get update && apt-get install -y sudo)
   fi
@@ -8,35 +8,35 @@ add_sudo() {
 
 # Function to link apt-fast to apt-get
 link_apt_fast() {
-  if ! command -v apt-fast >/dev/null; then
+  if ! command -v apt-fast; then
     sudo ln -sf /usr/bin/apt-get /usr/bin/apt-fast
-    trap "sudo rm -f /usr/bin/apt-fast 2>/dev/null" exit
+    trap "sudo rm -f /usr/bin/apt-fast" exit
   fi
 }
 
 # Function to setup environment for self-hosted runners.
 self_hosted_helper() {
-  if ! command -v apt-fast >/dev/null; then
+  if ! command -v apt-fast; then
     sudo ln -sf /usr/bin/apt-get /usr/bin/apt-fast
-    trap "sudo rm -f /usr/bin/apt-fast 2>/dev/null" exit
+    trap "sudo rm -f /usr/bin/apt-fast" exit
   fi
-  sudo mkdir -p /opt/hostedtoolcache >/dev/null 2>&1 || true
+  sudo mkdir -p /opt/hostedtoolcache || true
   install_packages apt-transport-https ca-certificates curl file make jq unzip autoconf automake gcc g++ gnupg
 }
 
 # Function to fix broken packages.
 fix_broken_packages() {
-  sudo apt --fix-broken install >/dev/null 2>&1
+  sudo apt --fix-broken install
 }
 
 # Function to install a package
 install_packages() {
   packages=("$@")
   if ! [ -e /etc/dpkg/dpkg.cfg.d/force-confnew ]; then
-    echo "force-confnew" | sudo tee /etc/dpkg/dpkg.cfg.d/force-confnew >/dev/null 2>&1
-    trap "sudo rm -f /etc/dpkg/dpkg.cfg.d/force-confnew 2>/dev/null" exit
+    echo "force-confnew" | sudo tee /etc/dpkg/dpkg.cfg.d/force-confnew
+    trap "sudo rm -f /etc/dpkg/dpkg.cfg.d/force-confnew" exit
   fi
-  $apt_install "${packages[@]}" >/dev/null 2>&1 || (update_lists && fix_broken_packages && $apt_install "${packages[@]}" >/dev/null 2>&1)
+  $apt_install "${packages[@]}" || (update_lists && fix_broken_packages && $apt_install "${packages[@]}")
 }
 
 # Function to disable an extension.
@@ -48,10 +48,10 @@ disable_extension_helper() {
     disable_extension_dependents "$extension"
   fi
   sudo sed -Ei "/=(.*\/)?\"?$extension(.so)?\"?$/d" "${ini_file[@]}" "$pecl_file"
-  sudo find "$ini_dir"/.. -name "*-$extension.ini" -not -path "*phar.ini" -not -path "*pecl.ini" -not -path "*mods-available*" -delete >/dev/null 2>&1 || true
+  sudo find "$ini_dir"/.. -name "*-$extension.ini" -not -path "*phar.ini" -not -path "*pecl.ini" -not -path "*mods-available*" -delete || true
   sudo rm -f /tmp/php"$version"_extensions
   mkdir -p /tmp/extdisabled/"$version"
-  echo '' | sudo tee /tmp/extdisabled/"$version"/"$extension" >/dev/null 2>&1
+  echo '' | sudo tee /tmp/extdisabled/"$version"/"$extension"
 }
 
 # Function to add PDO extension.
@@ -64,7 +64,7 @@ add_pdo_extension() {
     ext_name=$1
     if shared_extension pdo; then
       disable_extension_helper pdo
-      echo "extension=pdo.so" | sudo tee "${ini_file[@]/php.ini/conf.d/10-pdo.ini}" >/dev/null 2>&1
+      echo "extension=pdo.so" | sudo tee "${ini_file[@]/php.ini/conf.d/10-pdo.ini}"
     fi
     if [ "$ext" = "mysql" ]; then
       enable_extension "mysqlnd" "extension"
@@ -72,29 +72,29 @@ add_pdo_extension() {
     elif [ "$ext" = "dblib" ]; then
       ext_name="sybase"
     elif [ "$ext" = "firebird" ]; then
-      install_packages libfbclient2 >/dev/null 2>&1
+      install_packages libfbclient2
       enable_extension "pdo_firebird" "extension"
       ext_name="interbase"
     elif [ "$ext" = "sqlite" ]; then
       ext="sqlite3"
       ext_name="sqlite3"
     fi
-    add_extension "$ext_name" "extension" >/dev/null 2>&1
-    add_extension "$pdo_ext" "extension" >/dev/null 2>&1
+    add_extension "$ext_name" "extension"
+    add_extension "$pdo_ext" "extension"
     add_extension_log "$pdo_ext" "Enabled"
   fi
 }
 
 # Function to check if a package exists
 check_package() {
-  apt-cache policy "$1" 2>/dev/null | grep -q 'Candidate'
+  apt-cache policy "$1" | grep -q 'Candidate'
 }
 
 # Helper function to add an extension.
 add_extension_helper() {
   local extension=$1
   packages=(php"$version"-"$extension")
-  add_ppa ondrej/php >/dev/null 2>&1 || update_ppa ondrej/php
+  add_ppa ondrej/php || update_ppa ondrej/php
   [ "${debug:?}" = "debug" ] && check_package php"$version"-"$extension"-dbgsym && packages+=(php"$version"-"$extension"-dbgsym)
   (check_package "${packages[0]}" && install_packages "${packages[@]}") || pecl_install "$extension"
   add_extension_log "$extension" "Installed and enabled"
@@ -104,11 +104,11 @@ add_extension_helper() {
 # Function to setup phpize and php-config.
 add_devtools() {
   tool=$1
-  if ! command -v "$tool$version" >/dev/null; then
+  if ! command -v "$tool$version"; then
     install_packages "php$version-dev"
   fi
   switch_version "phpize" "php-config"
-  add_extension xml extension >/dev/null 2>&1
+  add_extension xml extension
   add_log "${tick:?}" "$tool" "Added $tool $semver"
 }
 
@@ -129,11 +129,11 @@ setup_cached_versions() {
 
 # Function to add PECL.
 add_pecl() {
-  add_devtools phpize >/dev/null 2>&1
-  if ! command -v pecl >/dev/null; then
+  add_devtools phpize
+  if ! command -v pecl; then
     install_packages php-pear
   fi
-  configure_pecl >/dev/null 2>&1
+  configure_pecl
   pear_version=$(get_tool_version "pecl" "version")
   add_log "${tick:?}" "PECL" "Added PECL $pear_version"
 }
@@ -142,11 +142,14 @@ add_pecl() {
 switch_version() {
   tools=("$@")
   to_wait=()
-  if ! (( ${#tools[@]} )); then
+  if ! ((${#tools[@]})); then
     tools+=(pear pecl php phar phar.phar php-cgi php-config phpize phpdbg)
-    [ -e /usr/lib/cgi-bin/php"$version" ] && sudo update-alternatives --set php-cgi-bin /usr/lib/cgi-bin/php"$version" & to_wait+=($!)
-    [ -e /usr/sbin/php-fpm"$version" ] && sudo update-alternatives --set php-fpm /usr/sbin/php-fpm"$version" & to_wait+=($!)
-    [ -e /run/php/php"$version"-fpm.sock ] && sudo update-alternatives --set php-fpm.sock /run/php/php"$version"-fpm.sock & to_wait+=($!)
+    [ -e /usr/lib/cgi-bin/php"$version" ] && sudo update-alternatives --set php-cgi-bin /usr/lib/cgi-bin/php"$version" &
+    to_wait+=($!)
+    [ -e /usr/sbin/php-fpm"$version" ] && sudo update-alternatives --set php-fpm /usr/sbin/php-fpm"$version" &
+    to_wait+=($!)
+    [ -e /run/php/php"$version"-fpm.sock ] && sudo update-alternatives --set php-fpm.sock /run/php/php"$version"-fpm.sock &
+    to_wait+=($!)
   fi
   for tool in "${tools[@]}"; do
     if [ -e "/usr/bin/$tool$version" ]; then
@@ -167,7 +170,7 @@ get_php_packages() {
 
 # Function to install packaged PHP
 add_packaged_php() {
-  add_ppa ondrej/php >/dev/null 2>&1 || update_ppa ondrej/php
+  add_ppa ondrej/php || update_ppa ondrej/php
   IFS=' ' read -r -a packages <<<"$(get_php_packages)"
   install_packages "${packages[@]}"
 }
@@ -188,10 +191,10 @@ update_php() {
 add_php() {
   if [ "${runner:?}" = "self-hosted" ] || [ "${use_package_cache:-true}" = "false" ]; then
     if [[ "$version" =~ ${nightly_versions:?} || "$ts" = "zts" ]]; then
-        setup_php_builder
+      setup_php_builder
     else
       add_packaged_php
-      switch_version >/dev/null 2>&1
+      switch_version
       add_pecl
     fi
   elif [[ "$version" =~ ${old_versions:?} ]]; then
@@ -204,7 +207,7 @@ add_php() {
 
 # Function to ini file for pear and link it to each SAPI.
 link_pecl_file() {
-  echo '' | sudo tee "$pecl_file" >/dev/null 2>&1
+  echo '' | sudo tee "$pecl_file"
   for file in "${ini_file[@]}"; do
     sapi_scan_dir="$(realpath -m "$(dirname "$file")")/conf.d"
     if [ "$sapi_scan_dir" != "$scan_dir" ] && ! [ -h "$sapi_scan_dir" ]; then
@@ -225,9 +228,9 @@ php_extra_version() {
 add_php_config() {
   php_lib_dir=/usr/lib/php/"$version"
   current_ini="$php_lib_dir"/php.ini-current
-  current=$(cat "$current_ini" 2>/dev/null)
+  current=$(cat "$current_ini")
   if [ "$current" = "$ini" ]; then
-    return;
+    return
   fi
   if [[ "$ini" = "production" && "x$current" != "xproduction" ]]; then
     echo "${ini_file[@]}" | xargs -n 1 -P 6 sudo cp "$php_lib_dir"/php.ini-production
@@ -237,9 +240,9 @@ add_php_config() {
   elif [ "$ini" = "development" ]; then
     echo "${ini_file[@]}" | xargs -n 1 -P 6 sudo cp "$php_lib_dir"/php.ini-development
   elif [ "$ini" = "none" ]; then
-    echo '' | sudo tee "${ini_file[@]}" >/dev/null 2>&1
+    echo '' | sudo tee "${ini_file[@]}"
   fi
-  echo "$ini" | sudo tee "$current_ini" >/dev/null 2>&1
+  echo "$ini" | sudo tee "$current_ini"
 }
 
 # Function to Setup PHP
@@ -250,13 +253,13 @@ setup_php() {
   check_pre_installed
   if [[ -z "$php_config" ]] || [ "$(php_semver | cut -c 1-3)" != "$version" ]; then
     if [ ! -e "/usr/bin/php$version" ] || [ ! -e "/usr/bin/php-config$version" ]; then
-      add_php >/dev/null 2>&1
+      add_php
     else
       if ! [[ "$version" =~ ${old_versions:?} ]]; then
-        switch_version >/dev/null 2>&1
+        switch_version
       fi
       if [ "${update:?}" = "true" ]; then
-        update_php >/dev/null 2>&1
+        update_php
       else
         status="Switched to"
       fi
@@ -264,12 +267,12 @@ setup_php() {
     php_config="$(command -v php-config)"
   else
     if [ "$update" = "true" ]; then
-      update_php >/dev/null 2>&1
+      update_php
     else
       status="Found"
     fi
   fi
-  if ! command -v php"$version" >/dev/null; then
+  if ! command -v php"$version"; then
     add_log "${cross:?}" "PHP" "Could not setup PHP $version"
     exit 1
   fi
@@ -284,7 +287,7 @@ setup_php() {
   link_pecl_file
   configure_php
   set_output "php-version" "$semver"
-  sudo rm -rf /usr/local/bin/phpunit >/dev/null 2>&1
+  sudo rm -rf /usr/local/bin/phpunit
   sudo chmod 777 "${ini_file[@]}" "$pecl_file" "${tool_path_dir:?}"
   sudo cp "$src"/configs/pm/*.json "$RUNNER_TOOL_CACHE/"
   add_log "${tick:?}" "PHP" "$status PHP $semver$extra_version"
@@ -298,8 +301,8 @@ debconf_fix="DEBIAN_FRONTEND=noninteractive"
 apt_install="sudo $debconf_fix apt-fast install -y --no-install-recommends"
 scripts="$src"/scripts
 
-add_sudo >/dev/null 2>&1
-link_apt_fast >/dev/null 2>&1
+add_sudo
+link_apt_fast
 
 . /etc/os-release
 # shellcheck source=.

@@ -43,7 +43,7 @@ set_output() {
   name=$1
   value=$2
   if [ "${GITHUB_ACTIONS}" = "true" ]; then
-    echo "${name}=${value}" | tee -a "$GITHUB_OUTPUT" >/dev/null 2>&1
+    echo "${name}=${value}" | tee -a "$GITHUB_OUTPUT"
   fi
 }
 
@@ -53,9 +53,9 @@ read_env() {
   [ "${debug:-${DEBUG:-false}}" = "true" ] && debug=debug && update=true || debug=release
   [[ "${phpts:-${PHPTS:-nts}}" = "ts" || "${phpts:-${PHPTS:-nts}}" = "zts" ]] && ts=zts && update=true || ts=nts
   fail_fast="${fail_fast:-${FAIL_FAST:-false}}"
-  [[ ( -z "$ImageOS" && -z "$ImageVersion" ) ||
-     ( -n "$RUNNER_ENVIRONMENT" && "$RUNNER_ENVIRONMENT" = "self-hosted" ) ||
-     -n "$ACT" || -n "$CONTAINER" ]] && _runner=self-hosted || _runner=github
+  [[ (-z "$ImageOS" && -z "$ImageVersion") ||
+    (-n "$RUNNER_ENVIRONMENT" && "$RUNNER_ENVIRONMENT" = "self-hosted") ||
+    -n "$ACT" || -n "$CONTAINER" ]] && _runner=self-hosted || _runner=github
   runner="${runner:-${RUNNER:-$_runner}}"
   tool_path_dir="${setup_php_tools_dir:-${SETUP_PHP_TOOLS_DIR:-/usr/local/bin}}"
 
@@ -68,7 +68,7 @@ read_env() {
   if [[ "$runner" = "github" && "${ImageOS}" =~ ubuntu.* ]]; then
     if ! check_ppa ondrej/php; then
       update=true
-      echo '' | sudo tee /tmp/sp_update >/dev/null 2>&1
+      echo '' | sudo tee /tmp/sp_update
     elif [ -e /tmp/sp_update ]; then
       update=true
     fi
@@ -85,13 +85,13 @@ read_env() {
 acquire_lock() {
   lock_path="$1"
   while true; do
-    if sudo mkdir "$lock_path" 2>/dev/null; then
-      echo $$ | sudo tee "$lock_path/pid" >/dev/null
+    if sudo mkdir "$lock_path"; then
+      echo $$ | sudo tee "$lock_path/pid"
       return 0
     else
       if sudo test -f "$lock_path/pid"; then
         lock_pid=$(sudo cat "$lock_path/pid")
-        if ! ps -p "$lock_pid" >/dev/null 2>&1; then
+        if ! ps -p "$lock_pid"; then
           sudo rm -rf "$lock_path"
           continue
         fi
@@ -110,11 +110,11 @@ release_lock() {
 # Function to get the SHA256 hash of a string.
 get_sha256() {
   local input=$1
-  if command -v sha256sum >/dev/null; then
+  if command -v sha256sum; then
     printf '%s' "$input" | sha256sum | cut -d' ' -f1
-  elif command -v shasum >/dev/null; then
+  elif command -v shasum; then
     printf '%s' "$input" | shasum -a 256 | cut -d' ' -f1
-  elif command -v openssl >/dev/null; then
+  elif command -v openssl; then
     printf '%s' "$input" | openssl dgst -sha256 | cut -d' ' -f2
   fi
 }
@@ -128,6 +128,7 @@ get() {
   file_path=$3
   shift 3
   links=("$@")
+  echo "> file_path: $3"
   if [ "$mode" = "-s" ]; then
     sudo curl "${curl_opts[@]}" "${links[0]}"
   else
@@ -135,7 +136,7 @@ get() {
       lock_path="/tmp/sp-lck-$(get_sha256 "$file_path")"
       acquire_lock "$lock_path"
       if [ "$execute" = "-e" ]; then
-        until [ -z "$(fuser "$file_path" 2>/dev/null)" ]; do
+        until [ -z "$(fuser "$file_path")" ]; do
           sleep 1
         done
       fi
@@ -171,10 +172,10 @@ add_path() {
   path_to_add=$1
   [[ ":$PATH:" == *":$path_to_add:"* ]] && return
   if [[ -n "$GITHUB_PATH" ]]; then
-    echo "$path_to_add" | tee -a "$GITHUB_PATH" >/dev/null 2>&1
+    echo "$path_to_add" | tee -a "$GITHUB_PATH"
   else
     profile=$(get_shell_profile)
-    ([ -e "$profile" ] && grep -q ":$path_to_add\"" "$profile" 2>/dev/null) || echo "export PATH=\"\${PATH:+\${PATH}:}\"$path_to_add" | sudo tee -a "$profile" >/dev/null 2>&1
+    ([ -e "$profile" ] && grep -q ":$path_to_add\"" "$profile") || echo "export PATH=\"\${PATH:+\${PATH}:}\"$path_to_add" | sudo tee -a "$profile"
   fi
   export PATH="${PATH:+${PATH}:}$path_to_add"
 }
@@ -184,10 +185,10 @@ add_env_path() {
   env_path=$1
   [ -e "$env_path" ] || return
   if [[ -n "$GITHUB_ENV" ]]; then
-    cat "$env_path" >> "$GITHUB_ENV"
+    cat "$env_path" >>"$GITHUB_ENV"
   else
     profile=$(get_shell_profile)
-    cat "$env_path" >> "$profile"
+    cat "$env_path" >>"$profile"
   fi
 }
 
@@ -196,10 +197,10 @@ add_env() {
   env_name=$1
   env_value=$2
   if [[ -n "$GITHUB_ENV" ]]; then
-    echo "$env_name=$env_value" | tee -a "$GITHUB_ENV" >/dev/null 2>&1
+    echo "$env_name=$env_value" | tee -a "$GITHUB_ENV"
   else
     profile=$(get_shell_profile)
-    echo "export $env_name=\"$env_value\"" | sudo tee -a "$profile" >/dev/null 2>&1
+    echo "export $env_name=\"$env_value\"" | sudo tee -a "$profile"
   fi
   export "$env_name"="$env_value"
 }
@@ -220,7 +221,7 @@ self_hosted_setup() {
       add_log "$cross" "PHP" "PHP $version is not supported on self-hosted runner"
       exit 1
     else
-      self_hosted_helper >/dev/null 2>&1
+      self_hosted_helper
       add_env RUNNER_TOOL_CACHE /opt/hostedtoolcache
     fi
   fi
@@ -246,8 +247,8 @@ configure_php() {
   ini_config_files=("$ini_config_dir"/php.ini)
   jit_config_files=("$ini_config_dir"/jit.ini)
   [[ "$version" =~ $xdebug3_versions ]] && ini_config_files+=("$ini_config_dir"/xdebug.ini)
-  cat "${ini_config_files[@]}" | sudo tee -a "${ini_file[@]:?}" >/dev/null 2>&1
-  [[ "$version" =~ $jit_versions ]] && cat "${jit_config_files[@]}" | sudo tee -a "${pecl_file:-${ini_file[@]}}" >/dev/null 2>&1
+  cat "${ini_config_files[@]}" | sudo tee -a "${ini_file[@]:?}"
+  [[ "$version" =~ $jit_versions ]] && cat "${jit_config_files[@]}" | sudo tee -a "${pecl_file:-${ini_file[@]}}"
 }
 
 # Function to get PHP version in semver format.
